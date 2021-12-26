@@ -1,7 +1,6 @@
 .env
 /vendor/*
 .idea
-/storage/cache
-/storage/xcache
+/Storage/cache
 .env
 run.bat

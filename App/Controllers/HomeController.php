@@ -12,59 +12,84 @@ class HomeController
     }
 
     public function get(){
+
         header('Content-Type: application/json; charset=utf-8');
-        if (!isset($_POST['user'])) {
-            echo json_encode([
-                'status'=>'error',
-                'message'=>'Missing parameters.'
-            ]);
-            return;
-        }
 
+        #Verify that the variable "user" exists
+        if (!isset($_POST['user'])) return toJson(['status'=>'error','message'=>'Missing parameters.']);
         $user = $_POST['user'];
-        $timeDuration = (isset($_ENV['TWITTER_CONSUMER_KEY'])) ? $_ENV['TWITTER_CONSUMER_KEY'] : 60*15;
-        $limitRate = (isset($_ENV['LIMIT_RATES'])) ? $_ENV['LIMIT_RATES'] : 400;
 
-        if (!cache()->has("time_first_use") || !cache()->has("requests")){
-            cache()->set("time_first_use", Carbon::now()->toDateTimeString(), Carbon::now()->addSeconds($timeDuration)->timestamp);
-            cache()->set("requests", $limitRate, Carbon::now()->addSeconds($timeDuration)->timestamp);
+        #Time range for request restart
+        $timeDuration = env('TIME_RESET',60*15);
+
+        #Limit of requests within that time already determined.
+        $limitRate = env('LIMIT_RATES',400);
+
+        #time_first_use:   Record the first use
+              #requests:   Number of requests remaining
+        if (!cache()->has("time_first_use")){
+            cache()->setMultiple(
+                [
+                    "time_first_use"=>Carbon::now()->toDateTimeString(),
+                    "requests"=>$limitRate,
+                ],
+                Carbon::now()->addSeconds($timeDuration)->timestamp
+            );
         }
 
+        #Reset time counting from the registration of the first use
         $timeResetUse = Carbon::createFromDate(cache()->get("time_first_use"))->addSeconds($timeDuration);
 
-        if (Carbon::now()->diffInSeconds($timeResetUse,false) < 0){
-            cache()->set("time_first_use", Carbon::now()->toDateTimeString(), Carbon::now()->addSeconds($timeDuration)->timestamp);
-            cache()->set("requests", $limitRate, Carbon::now()->addSeconds($timeDuration)->timestamp);
+        #If the period has expired, the variables are reset
+        if (Carbon::now()->diffInSeconds($timeResetUse,false) <= 0){
+            cache()->setMultiple(
+                [
+                    "time_first_use"=>Carbon::now()->toDateTimeString(),
+                    "requests"=>$limitRate,
+                ],
+                Carbon::now()->addSeconds($timeDuration)->timestamp
+            );
         }
 
-        if (cache()->get("requests")>0){
-            cache()->set("requests",cache()->get("requests")-1);
-            $TwitterOAuth = new TwitterOAuth($_ENV['TWITTER_CONSUMER_KEY'], $_ENV['TWITTER_CONSUMER_SECRET']);
-            $data = $TwitterOAuth->get("users/show",array('screen_name' => $user));
-            if (!isset($data->id)){
-                echo json_encode([
-                    'status'=>'error',
-                    'message'=>"User not found."
-                ]);
-                return;
-            }
-            echo json_encode([
-                "status"=>'ok',
-                "response"=>$data->id,
-                "limite_rate"=>cache()->get("requests")
-            ]);
-        }else{
-            if (Carbon::now()->diffInSeconds($timeResetUse,false) <=60){
-                $message = "You have reached the request limit within 15 minutes, try again in ".Carbon::now()->diffInSeconds($timeResetUse,false)." seconds.";
-            }else{
-                $message = "You have reached the request limit within 15 minutes, try again in ".Carbon::now()->diffInMinutes($timeResetUse,false)." minutes.";
-            }
-            echo json_encode([
+        #If the number of requests is over
+        if (cache()->get("requests")<=0){
+            $timeString = (Carbon::now()->diffInSeconds($timeResetUse,false) <=60) ?
+                Carbon::now()->diffInSeconds($timeResetUse,false)." seconds." :
+                Carbon::now()->diffInMinutes($timeResetUse,false)." minutes.";
+            return toJson([
                 'status'=>'error',
-                'message'=>$message,
+                'message'=>"You have reached the request limit within 15 minutes, try again in ".$timeString,
                 "limite_rate"=>cache()->get("requests")
             ]);
         }
+
+        #Subtract the request
+        cache()->set("requests",cache()->get("requests")-1);
+
+        #Initiate communication with the twitter library
+        $TwitterOAuth = new TwitterOAuth(
+            env('TWITTER_CONSUMER_KEY'),
+            env('TWITTER_CONSUMER_SECRET')
+        );
+
+        #Get data of user twitter
+        $response = $TwitterOAuth->get("users/show",array('screen_name' => $user));
+
+        #Validate that the request was correct
+        if (!isset($response->id)){
+            return toJson([
+                'status'=>'error',
+                'message'=>"User not found.",
+                "limite_rate"=>cache()->get("requests")
+            ]);
+        }
+
+        #Response to request
+        return toJson([
+            "status"=>'ok',
+            "response"=>$response->id,
+            "limite_rate"=>cache()->get("requests")
+        ]);
     }
 
 }

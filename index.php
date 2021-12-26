@@ -15,5 +15,5 @@ CacheManager::setDefaultConfig(new ConfigurationOption([
     'path' => __DIR__.'/storage/xcache',
 ]));
 Route::get('/', 'Controllers\HomeController@index');
-Route::post('/get', 'HomeController@get');
+Route::post('/get', 'Controllers\HomeController@get');
 Router::routeVoid();

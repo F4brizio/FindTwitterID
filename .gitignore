@@ -4,3 +4,4 @@
 /storage/cache
 /storage/xcache
 .env
+run.bat

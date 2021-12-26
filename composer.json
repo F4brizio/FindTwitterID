@@ -5,8 +5,11 @@
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "App\\": "app/"
+            "App\\": "app"
         },
+        "classmap": [
+            "App/"
+        ],
         "files": [
             "App/helpers.php"
         ]
